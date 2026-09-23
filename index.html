@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07111f" />
+  <title>SplitScreen Chat Stats</title>
+  <style>
+    :root { color-scheme: dark; --bg:#07111f; --panel:#101d2e; --border:#2c4058; --text:#f2f6fa; --muted:#9fb1c5; --accent:#2589ff; }
+    * { box-sizing:border-box; }
+    html,body { margin:0; width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    body { padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); }
+    .app { display:flex; flex-direction:column; height:100dvh; min-height:0; }
+    header { flex:0 0 auto; display:flex; align-items:center; gap:7px; min-height:52px; padding:7px 9px; background:#0b1828; border-bottom:1px solid var(--border); }
+    h1 { flex:1; min-width:0; margin:0; font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    button { border:1px solid var(--border); border-radius:7px; padding:8px 10px; background:var(--panel); color:var(--text); font-size:13px; cursor:pointer; }
+    button:active { background:#1d3856; }
+    .setup { flex:0 0 auto; display:grid; grid-template-columns:1fr 1fr; gap:7px; padding:7px 9px; background:#0b1828; border-bottom:1px solid var(--border); }
+    label { display:flex; flex-direction:column; gap:3px; color:var(--muted); font-size:11px; }
+    input { width:100%; min-width:0; border:1px solid var(--border); border-radius:6px; padding:8px; background:#07111f; color:var(--text); font:inherit; font-size:12px; }
+    .field-actions { display:flex; gap:5px; }
+    .field-actions input { flex:1; }
+    .hint { grid-column:1 / -1; margin:0; color:var(--muted); font-size:11px; }
+    .panel { display:flex; flex-direction:column; flex:0 0 auto; min-height:0; background:#000; }
+    #overlayPanel { height:var(--overlay-height,50%); }
+    #viewerPanel { height:var(--viewer-height,50%); }
+    .panel-bar { display:flex; align-items:center; gap:7px; flex:0 0 auto; min-height:31px; padding:5px 8px; background:var(--panel); border-bottom:1px solid var(--border); }
+    .panel-title { flex:1; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+    iframe { display:block; width:100%; height:100%; min-height:0; border:0; background:#000; }
+    #overlayFrame { background:transparent; }
+    .divider { position:relative; z-index:2; flex:0 0 7px; background:var(--accent); cursor:row-resize; touch-action:none; }
+    .divider::after { content:""; position:absolute; left:50%; top:50%; width:44px; height:3px; border-radius:3px; transform:translate(-50%,-50%); background:rgba(255,255,255,.75); }
+    .status { min-height:15px; color:var(--muted); font-size:10px; }
+    .copied { color:#75e39a; }
+    @media (max-width:650px) {
+      header { min-height:46px; padding:6px; }
+      h1 { font-size:14px; }
+      header button { padding:7px 8px; font-size:11px; }
+      .setup { grid-template-columns:1fr; padding:6px; }
+      .hint { grid-column:auto; }
+      .panel-bar { padding:4px 6px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>SplitScreen Chat Stats</h1>
+      <button id="copyButton" type="button">Copy overlay URL</button>
+      <button id="reloadButton" type="button">Reload</button>
+    </header>
+
+    <section class="setup" aria-label="Dashboard settings">
+      <label>
+        Aaron overlay URL
+        <div class="field-actions">
+          <input id="overlayUrl" type="url" value="https://chat.aaronpk.tv/overlay/" autocomplete="off" autocapitalize="none" spellcheck="false" />
+          <button id="overlayGo" type="button">Go</button>
+        </div>
+      </label>
+      <label>
+        Live viewer/stats URL
+        <div class="field-actions">
+          <input id="viewerUrl" type="url" value="https://skysquadtvserver.alwaysdata.net/liveview.php" autocomplete="off" autocapitalize="none" spellcheck="false" />
+          <button id="viewerGo" type="button">Go</button>
+        </div>
+      </label>
+      <label>
+        YouTube live video ID (opens chat pop-out)
+        <div class="field-actions">
+          <input id="videoId" type="text" placeholder="e.g. abc123xyz" autocomplete="off" autocapitalize="none" spellcheck="false" />
+          <button id="chatButton" type="button">Open chat</button>
+        </div>
+      </label>
+      <p class="hint">Sign in to YouTube in the browser where Aaron’s extension is installed. Generate your session URL there, then paste it above. This dashboard does not store credentials or use the YouTube API.</p>
+    </section>
+
+    <section class="panel" id="overlayPanel">
+      <div class="panel-bar"><span class="panel-title">Chat overlay</span><span class="status" id="overlayStatus"></span></div>
+      <iframe id="overlayFrame" title="Aaron Parecki live chat overlay" src="https://chat.aaronpk.tv/overlay/" allow="autoplay; fullscreen" allowfullscreen></iframe>
+    </section>
+    <div class="divider" id="divider" title="Drag to resize panels"></div>
+    <section class="panel" id="viewerPanel">
+      <div class="panel-bar"><span class="panel-title">Live viewer / stats</span><span class="status" id="viewerStatus"></span></div>
+      <iframe id="viewerFrame" title="Live viewer and stats" src="https://skysquadtvserver.alwaysdata.net/liveview.php" allow="autoplay; fullscreen" allowfullscreen></iframe>
+    </section>
+  </main>
+
+  <script>
+    const root = document.documentElement;
+    const overlayFrame = document.getElementById('overlayFrame');
+    const viewerFrame = document.getElementById('viewerFrame');
+    const overlayUrl = document.getElementById('overlayUrl');
+    const viewerUrl = document.getElementById('viewerUrl');
+    const heightRangeKey = 'splitScreenChatStatsOverlayHeight';
+    const settingsKey = 'splitScreenChatStatsSettings';
+
+    function normalizeUrl(value) {
+      const url = value.trim();
+      if (!url) return 'about:blank';
+      return /^https?:\/\//i.test(url) ? url : 'https://' + url;
+    }
+
+    function loadFrame(frame, input, status) {
+      const url = normalizeUrl(input.value);
+      input.value = url;
+      frame.src = url;
+      status.textContent = 'Loaded';
+      window.setTimeout(() => { status.textContent = ''; }, 1800);
+      saveSettings();
+    }
+
+    function saveSettings() {
+      localStorage.setItem(settingsKey, JSON.stringify({ overlayUrl: overlayUrl.value, viewerUrl: viewerUrl.value, videoId: document.getElementById('videoId').value }));
+    }
+
+    function setHeight(value) {
+      const top = Math.max(20, Math.min(80, Number(value) || 50));
+      root.style.setProperty('--overlay-height', top + '%');
+      root.style.setProperty('--viewer-height', (100 - top) + '%');
+      localStorage.setItem(heightRangeKey, String(top));
+    }
+
+    document.getElementById('overlayGo').addEventListener('click', () => loadFrame(overlayFrame, overlayUrl, document.getElementById('overlayStatus')));
+    document.getElementById('viewerGo').addEventListener('click', () => loadFrame(viewerFrame, viewerUrl, document.getElementById('viewerStatus')));
+    document.getElementById('reloadButton').addEventListener('click', () => { overlayFrame.src = overlayFrame.src; viewerFrame.src = viewerFrame.src; });
+    document.getElementById('copyButton').addEventListener('click', async () => {
+      const button = document.getElementById('copyButton');
+      try { await navigator.clipboard.writeText(overlayUrl.value); button.textContent = 'Copied'; button.classList.add('copied'); }
+      catch (_) { overlayUrl.select(); document.execCommand('copy'); button.textContent = 'Copied'; button.classList.add('copied'); }
+      window.setTimeout(() => { button.textContent = 'Copy overlay URL'; button.classList.remove('copied'); }, 1800);
+    });
+    document.getElementById('chatButton').addEventListener('click', () => {
+      const id = document.getElementById('videoId').value.trim();
+      if (!id) { alert('Enter the YouTube live video ID first.'); return; }
+      saveSettings();
+      window.open('https://www.youtube.com/live_chat?is_popout=1&v=' + encodeURIComponent(id), '_blank', 'noopener');
+    });
+    document.getElementById('videoId').addEventListener('input', saveSettings);
+
+    const savedSettings = JSON.parse(localStorage.getItem(settingsKey) || '{}');
+    if (savedSettings.overlayUrl) overlayUrl.value = savedSettings.overlayUrl;
+    if (savedSettings.viewerUrl) viewerUrl.value = savedSettings.viewerUrl;
+    if (savedSettings.videoId) document.getElementById('videoId').value = savedSettings.videoId;
+    const savedHeight = Number(localStorage.getItem(heightRangeKey));
+    setHeight(savedHeight || 50);
+
+    let dragging = false;
+    const divider = document.getElementById('divider');
+    divider.addEventListener('pointerdown', event => { dragging = true; divider.setPointerCapture(event.pointerId); });
+    divider.addEventListener('pointermove', event => {
+      if (!dragging) return;
+      const app = document.querySelector('.app').getBoundingClientRect();
+      const header = document.querySelector('header').getBoundingClientRect();
+      const setup = document.querySelector('.setup').getBoundingClientRect();
+      const available = app.height - header.height - setup.height - divider.offsetHeight;
+      setHeight(((event.clientY - header.bottom - setup.height) / available) * 100);
+    });
+    ['pointerup', 'pointercancel'].forEach(type => divider.addEventListener(type, () => { dragging = false; }));
+  </script>
+</body>
+</html>
